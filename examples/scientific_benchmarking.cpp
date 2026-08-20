@@ -1,5 +1,4 @@
 #include "cbnetwork/cbnetwork.hpp"
-#include "cbnetwork/experiment_strategies.hpp"
 #include "nlohmann/json.hpp"
 #include <filesystem>
 #include <fstream>
@@ -11,36 +10,54 @@
 #include <string>
 #include <vector>
 #include <algorithm>
+#include <chrono>
+#include <sys/resource.h>
 
 using namespace cbnetwork;
 namespace fs = std::filesystem;
 using json = nlohmann::json;
 
-std::string get_filename(int sample_id, const std::string &strategy, const std::string &type) {
-  return "cbn_sample_" + std::to_string(sample_id) + "_" + strategy + "_" + type;
+struct BenchResults {
+    std::string run_name = "ParallelPipeline";
+    double p1_ms = 0.0;
+    double p2_ms = 0.0;
+    double p3_ms = 0.0;
+    double total_ms = 0.0;
+    long max_rss_kb = 0;
+    size_t global_attractors_count = 0;
+    bool success = false;
+};
+
+static long get_max_rss() {
+  struct rusage usage;
+  getrusage(RUSAGE_SELF, &usage);
+  return usage.ru_maxrss;
 }
 
-void log_to_csv(const std::string &filename, const ExperimentResults &res, int sample_id, int topology, int networks, int vars) {
+std::string get_filename(int sample_id, const std::string &type) {
+  return "cbn_sample_" + std::to_string(sample_id) + "_" + type;
+}
+
+void log_to_csv(const std::string &filename, const BenchResults &res, int sample_id, int topology, int networks, int vars) {
   bool file_exists = fs::exists(filename);
   std::ofstream out(filename, std::ios_base::app);
   if (!out.is_open()) return;
-  if (!file_exists) out << "sample_id,strategy,topology,n_networks,n_vars,p1_ms,p2_ms,p3_ms,max_rss_kb,fields\n";
-  out << sample_id << "," << res.strategy_name << "," << topology << "," << networks << "," << vars << "," << std::fixed << std::setprecision(4) << res.p1_ms << "," << std::fixed << std::setprecision(4) << res.p2_ms << "," << std::fixed << std::setprecision(4) << res.p3_ms << "," << res.max_rss_kb << "," << res.global_attractors_count << "\n";
+  if (!file_exists) out << "sample_id,run_name,topology,n_networks,n_vars,p1_ms,p2_ms,p3_ms,max_rss_kb,fields\n";
+  out << sample_id << "," << res.run_name << "," << topology << "," << networks << "," << vars << "," << std::fixed << std::setprecision(4) << res.p1_ms << "," << std::fixed << std::setprecision(4) << res.p2_ms << "," << std::fixed << std::setprecision(4) << res.p3_ms << "," << res.max_rss_kb << "," << res.global_attractors_count << "\n";
 }
 
 void export_network_structure_json(int sample_id, std::shared_ptr<CBN> cbn, const std::string &output_dir) {
-  std::string filepath = output_dir + "/" + get_filename(sample_id, "base", "network_structure.json");
+  std::string filepath = output_dir + "/" + get_filename(sample_id, "network_structure.json");
   cbn->save_network_to_json(filepath);
 }
 
-void export_full_trace_json(int sample_id, const std::string &strategy_name, std::shared_ptr<CBN> cbn, const ExperimentResults &res, const std::string &output_dir, const std::string& input_id, int v_topology) {
-  std::string filepath = output_dir + "/" + get_filename(sample_id, strategy_name, "dynamics.json");
+void export_full_trace_json(int sample_id, std::shared_ptr<CBN> cbn, const BenchResults &res, const std::string &output_dir, const std::string& input_id, int v_topology) {
+  std::string filepath = output_dir + "/" + get_filename(sample_id, "dynamics.json");
   json j_out;
 
   // 1. Topology Metadata
   j_out["topology_metadata"] = {
       {"v_topology", v_topology},
-      {"topology_strategy", strategy_name},
       {"topology_id", input_id},
       {"n_networks", (int)cbn->l_local_networks.size()},
       {"n_var_network", (int)cbn->get_n_local_variables()}
@@ -153,17 +170,13 @@ void export_full_trace_json(int sample_id, const std::string &strategy_name, std
 
   j_out["pipeline_execution"] = j_pipeline;
 
-  // 3. Performance Metrics (Ensuring it is named "performance" to match solver)
+  // 3. Performance Metrics
   j_out["performance"] = {
       {"step_1_ms", res.p1_ms},
       {"step_2_ms", res.p2_ms},
       {"step_3_ms", res.p3_ms},
       {"total_ms", res.total_ms},
       {"max_rss_kb", (double)res.max_rss_kb},
-      {"mem_p1_kb", res.p1_mem_kb},
-      {"mem_p2_kb", res.p2_mem_kb},
-      {"mem_p3_kb", res.p3_mem_kb},
-      {"mem_total_kb", res.total_mem_kb},
       {"success", res.success}
   };
 
@@ -195,38 +208,56 @@ int main(int argc, char **argv) {
       input_id = fs::path(input_json).stem().string();
   }
 
-  std::vector<std::pair<std::string, std::unique_ptr<ExperimentStrategy>>> strategies;
-  strategies.push_back({"Traditional", std::make_unique<TraditionalExperiment>()});
-  strategies.push_back({"SimpleParallel", std::make_unique<SimpleParallelExperiment>()});
-  strategies.push_back({"AdvancedParallel", std::make_unique<AdvancedParallelExperiment>()});
-
   for (int s = 0; s < n_samples; ++s) {
     int sample_id = s + 1;
     try {
-      std::shared_ptr<CBN> reference_cbn;
+      std::shared_ptr<CBN> cbn;
       if (!input_json.empty()) {
-        reference_cbn = CBN::load_network_from_json(input_json);
+        cbn = CBN::load_network_from_json(input_json);
       } else {
-        reference_cbn = CBN::cbn_generator(topology, n_networks, n_vars, 1, 1);
+        cbn = CBN::cbn_generator(topology, n_networks, n_vars, 1, 1);
       }
-      if (!reference_cbn)
+      if (!cbn)
         throw std::runtime_error("CBN load failed");
+
       if (input_json.empty())
-        export_network_structure_json(sample_id, reference_cbn, output_dir);
-      for (auto &s_pair : strategies) {
-        auto cbn = reference_cbn->clone();
-        auto results = s_pair.second->run(cbn);
-        if (debug_dump && s_pair.first == "AdvancedParallel") {
-           std::cout << "\n--- DEBUG DUMP: LOCAL ATTRACTORS ---" << std::endl;
-           cbn->show_local_attractors();
-           std::cout << "\n--- DEBUG DUMP: COMPATIBLE PAIRS ---" << std::endl;
-           cbn->show_attractor_pairs();
-           std::cout << "\n--- DEBUG DUMP: ATTRACTOR FIELDS ---" << std::endl;
-           cbn->show_stable_attractor_fields();
-        }
-        log_to_csv(output_file, results, sample_id, topology, n_networks, n_vars);
-        export_full_trace_json(sample_id, s_pair.first, cbn, results, output_dir, input_id, topology);
+        export_network_structure_json(sample_id, cbn, output_dir);
+
+      BenchResults results;
+      auto start_total = std::chrono::high_resolution_clock::now();
+
+      auto start1 = std::chrono::high_resolution_clock::now();
+      cbn->find_local_attractors();
+      auto end1 = std::chrono::high_resolution_clock::now();
+      results.p1_ms = std::chrono::duration<double, std::milli>(end1 - start1).count();
+
+      auto start2 = std::chrono::high_resolution_clock::now();
+      cbn->find_compatible_pairs();
+      auto end2 = std::chrono::high_resolution_clock::now();
+      results.p2_ms = std::chrono::duration<double, std::milli>(end2 - start2).count();
+
+      auto start3 = std::chrono::high_resolution_clock::now();
+      cbn->mount_attractor_fields();
+      auto end3 = std::chrono::high_resolution_clock::now();
+      results.p3_ms = std::chrono::duration<double, std::milli>(end3 - start3).count();
+
+      auto end_total = std::chrono::high_resolution_clock::now();
+      results.total_ms = std::chrono::duration<double, std::milli>(end_total - start_total).count();
+      results.max_rss_kb = get_max_rss();
+      results.global_attractors_count = cbn->get_n_attractor_fields();
+      results.success = true;
+
+      if (debug_dump) {
+         std::cout << "\n--- DEBUG DUMP: LOCAL ATTRACTORS ---" << std::endl;
+         cbn->show_local_attractors();
+         std::cout << "\n--- DEBUG DUMP: COMPATIBLE PAIRS ---" << std::endl;
+         cbn->show_attractor_pairs();
+         std::cout << "\n--- DEBUG DUMP: ATTRACTOR FIELDS ---" << std::endl;
+         cbn->show_stable_attractor_fields();
       }
+      log_to_csv(output_file, results, sample_id, topology, n_networks, n_vars);
+      export_full_trace_json(sample_id, cbn, results, output_dir, input_id, topology);
+
     } catch (const std::exception &e) { std::cerr << "Error: " << e.what() << std::endl; }
   }
   return 0;

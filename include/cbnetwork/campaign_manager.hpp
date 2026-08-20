@@ -6,9 +6,18 @@
 #include <memory>
 #include "cbnetwork/cbnetwork.hpp"
 #include "cbnetwork/network_factory.hpp"
-#include "cbnetwork/experiment_strategies.hpp"
 
 namespace cbnetwork {
+
+struct CampaignExecutionResults {
+    double p1_ms = 0.0;
+    double p2_ms = 0.0;
+    double p3_ms = 0.0;
+    double total_ms = 0.0;
+    long max_rss_kb = 0;
+    size_t global_attractors_count = 0;
+    bool success = false;
+};
 
 class CampaignManager {
 public:
@@ -20,7 +29,7 @@ private:
     void export_experiment_data(const std::string& base_path,
                                 const ExperimentConfig& config,
                                 std::shared_ptr<CBN> cbn,
-                                const ExperimentResults& results);
+                                const CampaignExecutionResults& results);
 };
 
 } // namespace cbnetwork
