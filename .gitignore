@@ -1,0 +1,57 @@
+# ==========================================
+# CMAKE & BUILD ARTIFACTS
+# ==========================================
+build/
+bin/
+lib/
+CMakeCache.txt
+CMakeFiles/
+CMakeScripts/
+cmake_install.cmake
+install_manifest.txt
+*.cmake
+*.make
+Makefile
+
+# ==========================================
+# COMPILED BINARIES & LIBRARIES
+# ==========================================
+*.a
+*.so
+*.dylib
+*.o
+*.d
+run_pipeline
+scientific_benchmarking
+campaign_runner
+experiment_runner
+strategic_campaign
+test_parity
+unit_tests
+verify_cbn
+
+# ==========================================
+# EXPERIMENTAL OUTPUTS & LOGS
+# ==========================================
+*.log
+*.csv
+outputs/
+results/
+outputs_benchmark_granular/
+benchmark_BN_*/
+
+# ==========================================
+# IDEs & EDITORS
+# ==========================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.cache/
+
+# ==========================================
+# OS GENERATED FILES
+# ==========================================
+.DS_Store
+Thumbs.db
