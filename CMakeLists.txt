@@ -15,9 +15,6 @@ file(GLOB SOURCES "src/*.cpp")
 add_library(cbn_core ${SOURCES})
 target_link_libraries(cbn_core PUBLIC OpenMP::OpenMP_CXX ${MINISAT_LIBRARY})
 
-add_executable(verify_cbn examples/verify_cbn.cpp)
-target_link_libraries(verify_cbn cbn_core OpenMP::OpenMP_CXX)
-
 add_executable(run_pipeline examples/run_pipeline.cpp)
 target_link_libraries(run_pipeline cbn_core OpenMP::OpenMP_CXX)
 
@@ -26,12 +23,6 @@ target_link_libraries(experiment_runner cbn_core OpenMP::OpenMP_CXX)
 
 add_executable(scientific_benchmarking examples/scientific_benchmarking.cpp)
 target_link_libraries(scientific_benchmarking cbn_core OpenMP::OpenMP_CXX)
-
-add_executable(test_parity examples/test_parity.cpp)
-target_link_libraries(test_parity cbn_core OpenMP::OpenMP_CXX)
-
-add_executable(strategic_campaign examples/strategic_campaign.cpp)
-target_link_libraries(strategic_campaign cbn_core OpenMP::OpenMP_CXX)
 
 add_executable(campaign_runner examples/campaign_runner.cpp)
 target_link_libraries(campaign_runner cbn_core OpenMP::OpenMP_CXX)

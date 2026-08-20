@@ -1,15 +1,22 @@
 #include "cbnetwork/campaign_manager.hpp"
 #include "cbnetwork/network_factory.hpp"
-#include "cbnetwork/experiment_strategies.hpp"
 #include "nlohmann/json.hpp"
 #include <fstream>
 #include <iostream>
 #include <filesystem>
+#include <chrono>
+#include <sys/resource.h>
 
 namespace cbnetwork {
 
 namespace fs = std::filesystem;
 using json = nlohmann::json;
+
+static long get_max_rss() {
+    struct rusage usage;
+    getrusage(RUSAGE_SELF, &usage);
+    return usage.ru_maxrss;
+}
 
 void CampaignManager::run_campaign(const std::string& config_path) {
     std::ifstream file(config_path);
@@ -49,8 +56,34 @@ void CampaignManager::run_campaign(const std::string& config_path) {
 
         auto cbn = NetworkFactory::create_from_config(config);
 
-        AdvancedParallelExperiment strategy;
-        ExperimentResults results = strategy.run(cbn);
+        CampaignExecutionResults results;
+        auto start_total = std::chrono::high_resolution_clock::now();
+
+        try {
+            auto start1 = std::chrono::high_resolution_clock::now();
+            cbn->find_local_attractors();
+            auto end1 = std::chrono::high_resolution_clock::now();
+            results.p1_ms = std::chrono::duration<double, std::milli>(end1 - start1).count();
+
+            auto start2 = std::chrono::high_resolution_clock::now();
+            cbn->find_compatible_pairs();
+            auto end2 = std::chrono::high_resolution_clock::now();
+            results.p2_ms = std::chrono::duration<double, std::milli>(end2 - start2).count();
+
+            auto start3 = std::chrono::high_resolution_clock::now();
+            cbn->mount_attractor_fields();
+            auto end3 = std::chrono::high_resolution_clock::now();
+            results.p3_ms = std::chrono::duration<double, std::milli>(end3 - start3).count();
+
+            auto end_total = std::chrono::high_resolution_clock::now();
+            results.total_ms = std::chrono::duration<double, std::milli>(end_total - start_total).count();
+            results.max_rss_kb = get_max_rss();
+            results.global_attractors_count = cbn->get_n_attractor_fields();
+            results.success = true;
+        } catch (const std::exception& e) {
+            std::cerr << "Exception in experiment " << config.id << ": " << e.what() << std::endl;
+            results.success = false;
+        }
 
         if (results.success) {
             export_experiment_data(exp_dir + "/" + config.id, config, cbn, results);
@@ -64,7 +97,7 @@ void CampaignManager::run_campaign(const std::string& config_path) {
 void CampaignManager::export_experiment_data(const std::string& base_path,
                                             const ExperimentConfig& config,
                                             std::shared_ptr<CBN> cbn,
-                                            const ExperimentResults& results) {
+                                            const CampaignExecutionResults& results) {
     // 1. [id]_network.json
     cbn->save_network_to_json(base_path + "_network.json");
 

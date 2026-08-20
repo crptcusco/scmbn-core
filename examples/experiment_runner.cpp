@@ -75,15 +75,15 @@ int main(int argc, char** argv) {
         );
 
         auto s1_start = high_resolution_clock::now();
-        cbn->find_local_attractors_parallel();
+        cbn->find_local_attractors();
         auto s1_end = high_resolution_clock::now();
 
         auto s2_start = high_resolution_clock::now();
-        cbn->find_compatible_pairs_parallel();
+        cbn->find_compatible_pairs();
         auto s2_end = high_resolution_clock::now();
 
         auto s3_start = high_resolution_clock::now();
-        cbn->mount_stable_attractor_fields_parallel();
+        cbn->mount_attractor_fields();
         auto s3_end = high_resolution_clock::now();
 
         auto end_total = high_resolution_clock::now();
