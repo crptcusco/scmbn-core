@@ -26,7 +26,8 @@ public:
     std::map<int, std::vector<std::pair<int, int>>> d_comp_pairs_attractors_by_value;
 
     DirectedEdge(int idx, int idx_var, int in_net, int out_net,
-                 const std::vector<int>& out_vars, const std::string& coup_func);
+                 const std::vector<int>& out_vars, const std::string& coup_func,
+                 const std::map<std::string, std::string>& tt = {});
 
     void show() const;
     void show_short() const;
