@@ -258,7 +258,10 @@ int main(int argc, char **argv) {
       log_to_csv(output_file, results, sample_id, topology, n_networks, n_vars);
       export_full_trace_json(sample_id, cbn, results, output_dir, input_id, topology);
 
-    } catch (const std::exception &e) { std::cerr << "Error: " << e.what() << std::endl; }
+    } catch (const std::exception &e) {
+      std::cerr << "Error: " << e.what() << std::endl;
+      return 1;
+    }
   }
   return 0;
 }

@@ -1133,11 +1133,12 @@ std::shared_ptr<CBN> CBN::load_network_from_json(const std::string &filepath) {
               ? edge_j["coupling_function"].get<std::string>()
           : edge_j.contains("function") ? edge_j["function"].get<std::string>()
                                         : "";
+      std::map<std::string, std::string> tt;
+      if (edge_j.contains("true_table")) {
+        tt = edge_j["true_table"].get<std::map<std::string, std::string>>();
+      }
       auto edge = std::make_shared<DirectedEdge>(idx, idx_var, in_net, out_net,
-                                                 out_vars, coup_func);
-      if (edge_j.contains("true_table"))
-        edge->true_table =
-            edge_j["true_table"].get<std::map<std::string, std::string>>();
+                                                 out_vars, coup_func, tt);
       edges.push_back(edge);
     }
   }

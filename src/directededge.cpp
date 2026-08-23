@@ -160,17 +160,20 @@ private:
 };
 
 DirectedEdge::DirectedEdge(int idx, int idx_var, int in_net, int out_net,
-                           const std::vector<int>& out_vars, const std::string& coup_func)
+                           const std::vector<int>& out_vars, const std::string& coup_func,
+                           const std::map<std::string, std::string>& tt)
     : index(idx), index_variable(idx_var), input_local_network(in_net),
       output_local_network(out_net), l_output_variables(out_vars),
-      coupling_function(coup_func), kind_signal(2) {
+      coupling_function(coup_func), true_table(tt), kind_signal(2) {
 
     d_kind_signal[1] = "RESTRICTED";
     d_kind_signal[2] = "NOT COMPUTE";
     d_kind_signal[3] = "STABLE";
     d_kind_signal[4] = "NOT STABLE";
 
-    true_table = process_true_table();
+    if (true_table.empty()) {
+        true_table = process_true_table();
+    }
 }
 
 void DirectedEdge::show() const {
@@ -193,44 +196,53 @@ std::pair<int, int> DirectedEdge::get_edge() const {
 }
 
 std::map<std::string, std::string> DirectedEdge::process_true_table() {
+    if (!true_table.empty()) return true_table;
     std::map<std::string, std::string> r_true_table;
     int n = l_output_variables.size();
     if (n == 0) return r_true_table;
 
-    std::string translated_func = coupling_function;
-    std::vector<char> abecedario;
-    for(char c='A'; c<='Z'; ++c) abecedario.push_back(c);
+    try {
+        std::string translated_func = coupling_function;
+        std::vector<char> abecedario;
+        for(char c='A'; c<='Z'; ++c) abecedario.push_back(c);
 
-    std::map<int, char> var_to_char;
-    for(int i=0; i<n; ++i) {
-        var_to_char[l_output_variables[i]] = abecedario[i];
-    }
-
-    // Replace variable indices with A, B, C...
-    // To match Python's replacement: dict_aux_var_saida[" " + str(variable_saida) + " "] = l_abecedario[cont_aux_abecedario]
-    for(auto const& [var, ch] : var_to_char) {
-        std::string pattern = " " + std::to_string(var) + " ";
-        size_t start_pos = 0;
-        while((start_pos = translated_func.find(pattern, start_pos)) != std::string::npos) {
-            translated_func.replace(start_pos, pattern.length(), std::string(1, ch));
-        }
-    }
-
-    BooleanParser parser(translated_func);
-    auto root = parser.parse();
-
-    int total_permutations = 1 << n;
-    for (int i = 0; i < total_permutations; ++i) {
-        std::map<char, bool> env;
-        std::string key = "";
-        for (int j = 0; j < n; ++j) {
-            bool val = (i >> (n - 1 - j)) & 1;
-            env[abecedario[j]] = val;
-            key += val ? "1" : "0";
+        std::map<int, char> var_to_char;
+        for(int i=0; i<n; ++i) {
+            var_to_char[l_output_variables[i]] = abecedario[i];
         }
 
-        bool res = BooleanParser::evaluate(root.get(), env);
-        r_true_table[key] = res ? "1" : "0";
+        // Replace variable indices with A, B, C...
+        // To match Python's replacement: dict_aux_var_saida[" " + str(variable_saida) + " "] = l_abecedario[cont_aux_abecedario]
+        for(auto const& [var, ch] : var_to_char) {
+            std::string pattern = " " + std::to_string(var) + " ";
+            size_t start_pos = 0;
+            while((start_pos = translated_func.find(pattern, start_pos)) != std::string::npos) {
+                translated_func.replace(start_pos, pattern.length(), std::string(1, ch));
+            }
+        }
+
+        BooleanParser parser(translated_func);
+        auto root = parser.parse();
+        if (!root) {
+            throw std::runtime_error("Boolean parser returned null AST node");
+        }
+
+        int total_permutations = 1 << n;
+        for (int i = 0; i < total_permutations; ++i) {
+            std::map<char, bool> env;
+            std::string key = "";
+            for (int j = 0; j < n; ++j) {
+                bool val = (i >> (n - 1 - j)) & 1;
+                env[abecedario[j]] = val;
+                key += val ? "1" : "0";
+            }
+
+            bool res = BooleanParser::evaluate(root.get(), env);
+            r_true_table[key] = res ? "1" : "0";
+        }
+    } catch (const std::exception& e) {
+        throw std::runtime_error("Failed to parse coupling function '" + coupling_function +
+                                 "': " + std::string(e.what()));
     }
 
     return r_true_table;
